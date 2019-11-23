@@ -24,7 +24,7 @@ import (
 
 // Parse returns a root-level Node parsed from the lines read from r.  In
 // general, this will be done for you by one of the File constructors.
-func Parse(r io.Reader) (node Node, err error) {
+func Parse(r io.Reader) (Node, error) {
 	lb := &lineBuffer{
 		Reader: bufio.NewReader(r),
 	}
@@ -60,9 +60,9 @@ func (line *indentedLine) String() string {
 		strings.Repeat(" ", 0*line.indent), string(line.line))
 }
 
-func parseNode(r lineReader, ind int, initial Node) (node Node, err error) {
+func parseNode(r lineReader, ind int, initial Node) (Node, error) {
 	first := true
-	node = initial
+	node := initial
 
 	// read lines
 	for {
@@ -235,24 +235,20 @@ func parseNode(r lineReader, ind int, initial Node) (node Node, err error) {
 
 		node = prev
 	}
-	return
+	return node, nil
 }
 
-func getType(line []byte) (typ, split int) {
+func getType(line []byte) (int, int) {
 	if len(line) == 0 {
-		return
+		return typUnknown, 0
 	}
 
 	if line[0] == '-' {
-		typ = typSequence
-		split = 1
-		return
+		return typSequence, 1
 	}
 
-	typ = typScalar
-
 	if line[0] == ' ' || line[0] == '"' {
-		return
+		return typScalar, 0
 	}
 
 	// the first character is real
@@ -262,16 +258,19 @@ func getType(line []byte) (typ, split int) {
 
 	idx := bytes.IndexAny(line, " \":")
 	if idx < 0 {
-		return
+		return typScalar, 0
 	}
 
 	if line[idx] == '"' {
-		return
+		return typScalar, 0
 	}
 
 	if line[idx] == ':' {
-		typ = typMapping
-		split = idx
+		if idx+1 < len(line) && line[idx+1] != ' ' {
+			return typScalar, 0
+		}
+		return typMapping, idx
+
 	} else if line[idx] == ' ' {
 		// we have a space
 		// need to see if its all spaces until a :
@@ -285,21 +284,14 @@ func getType(line []byte) (typ, split int) {
 					continue
 				}
 
-				typ = typMapping
-				split = i
-				break
+				return typMapping, i
 			default:
 				break
 			}
 		}
 	}
 
-	if typ == typMapping && split+1 < len(line) && line[split+1] != ' ' {
-		typ = typScalar
-		split = 0
-	}
-
-	return
+	return typScalar, 0
 }
 
 // lineReader implementations
@@ -361,16 +353,16 @@ func (lb *lineBuffer) Next(min int) (*indentedLine, error) {
 
 type lineSlice []*indentedLine
 
-func (ls *lineSlice) Next(min int) (next *indentedLine) {
+func (ls *lineSlice) Next(min int) *indentedLine {
 	if len(*ls) == 0 {
 		return nil
 	}
-	next = (*ls)[0]
+	next := (*ls)[0]
 	if next.indent < min {
 		return nil
 	}
 	*ls = (*ls)[1:]
-	return
+	return next
 }
 
 func (ls *lineSlice) Push(line *indentedLine) {
