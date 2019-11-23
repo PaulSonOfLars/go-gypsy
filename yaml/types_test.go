@@ -117,6 +117,14 @@ yahoo:
   url:     http://yahoo.com/
 `,
 	},
+	{
+		Tree: Document{
+			Map{"doc": Scalar("test")},
+		},
+		Expect: `---
+doc: test
+`,
+	},
 }
 
 func TestRender(t *testing.T) {

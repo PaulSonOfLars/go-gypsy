@@ -118,3 +118,25 @@ func Render(node Node) string {
 	node.write(buf, 0, 0)
 	return buf.String()
 }
+
+type Document []Node
+
+// Get the number of items in the Document.
+func (node Document) Len() int {
+	return len(node)
+}
+
+// Get the idx'th item from the List.
+func (node Document) Item(idx int) Node {
+	if idx >= 0 && idx < len(node) {
+		return node[idx]
+	}
+	return nil
+}
+
+func (node Document) write(out io.Writer, _, _ int) {
+	for _, value := range node {
+		fmt.Fprint(out, "---\n")
+		value.write(out, 0, 0)
+	}
+}

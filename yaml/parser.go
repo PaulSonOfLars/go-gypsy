@@ -39,10 +39,11 @@ const (
 	typSequence
 	typMapping
 	typScalar
+	typDocument
 )
 
 var typNames = []string{
-	"Unknown", "Sequence", "Mapping", "Scalar",
+	"Unknown", "Sequence", "Mapping", "Scalar", "Document",
 }
 
 type lineReader interface {
@@ -136,6 +137,10 @@ func parseNode(r lineReader, ind int, initial Node) (Node, error) {
 				types = append(types, typSequence)
 				pieces = append(pieces, "-")
 				inlineValue(end)
+			case typDocument:
+				types = append(types, typDocument)
+				pieces = append(pieces, "---")
+				inlineValue(end)
 			default:
 				return fmt.Errorf("unexpected inline value type %v: %v", vtyp, typNames[vtyp])
 			}
@@ -170,6 +175,7 @@ func parseNode(r lineReader, ind int, initial Node) (Node, error) {
 					break
 				}
 				current = Scalar(piece)
+
 			case typMapping:
 				var mapNode Map
 				var ok bool
@@ -221,6 +227,33 @@ func parseNode(r lineReader, ind int, initial Node) (Node, error) {
 				}
 				listNode = append(listNode, child)
 				current = listNode
+
+			case typDocument:
+				var docNode Document
+				var ok bool
+				var child Node
+
+				// Get the current document list, if there is one
+				if docNode, ok = current.(Document); current != nil && !ok {
+					return nil, fmt.Errorf("expected a document")
+				} else if current == nil {
+					docNode = make(Document, 0)
+				}
+
+				if _, inlineList := prev.(Scalar); inlineList && last > 0 {
+					current = Document{
+						prev,
+					}
+					break
+				}
+
+				child, err = parseNode(r, line.indent, prev)
+				if err != nil {
+					return nil, err
+				}
+				docNode = append(docNode, child)
+				current = docNode
+
 			default:
 				return nil, fmt.Errorf("unexpected type %v: %v", typ, typNames[typ])
 			}
@@ -241,6 +274,10 @@ func parseNode(r lineReader, ind int, initial Node) (Node, error) {
 func getType(line []byte) (int, int) {
 	if len(line) == 0 {
 		return typUnknown, 0
+	}
+
+	if string(line) == "---" {
+		return typDocument, len(line)
 	}
 
 	if line[0] == '-' {

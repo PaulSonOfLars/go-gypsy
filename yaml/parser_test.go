@@ -167,6 +167,14 @@ var parseTests = []struct {
 		Input:  `test: "localhost:8080"`,
 		Output: `test: "localhost:8080"` + "\n",
 	},
+	{
+		Input: `---
+doc: data
+`,
+		Output: `---
+doc: data
+`,
+	},
 }
 
 func TestParse(t *testing.T) {
@@ -199,6 +207,10 @@ var getTypeTests = []struct {
 		Value: "- b",
 		Type:  typSequence,
 		Split: 1,
+	}, {
+		Value: "---",
+		Type:  typDocument,
+		Split: 3,
 	},
 }
 
