@@ -17,7 +17,6 @@ package yaml
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -30,21 +29,7 @@ func Parse(r io.Reader) (node Node, err error) {
 		Reader: bufio.NewReader(r),
 	}
 
-	defer func() {
-		if r := recover(); r != nil {
-			switch r := r.(type) {
-			case error:
-				err = r
-			case string:
-				err = errors.New(r)
-			default:
-				err = fmt.Errorf("%v", r)
-			}
-		}
-	}()
-
-	node = parseNode(lb, 0, nil)
-	return
+	return parseNode(lb, 0, nil)
 }
 
 // Supporting types and constants
@@ -61,7 +46,7 @@ var typNames = []string{
 }
 
 type lineReader interface {
-	Next(minIndent int) *indentedLine
+	Next(minIndent int) (*indentedLine, error)
 }
 
 type indentedLine struct {
@@ -75,13 +60,16 @@ func (line *indentedLine) String() string {
 		strings.Repeat(" ", 0*line.indent), string(line.line))
 }
 
-func parseNode(r lineReader, ind int, initial Node) (node Node) {
+func parseNode(r lineReader, ind int, initial Node) (node Node, err error) {
 	first := true
 	node = initial
 
 	// read lines
 	for {
-		line := r.Next(ind)
+		line, err := r.Next(ind)
+		if err != nil {
+			return nil, err
+		}
 		if line == nil {
 			break
 		}
@@ -98,8 +86,8 @@ func parseNode(r lineReader, ind int, initial Node) (node Node) {
 		types := []int{}
 		pieces := []string{}
 
-		var inlineValue func([]byte)
-		inlineValue = func(partial []byte) {
+		var inlineValue func([]byte) error
+		inlineValue = func(partial []byte) error {
 			// TODO(kevlar): This can be a for loop now
 			vtyp, brk := getType(partial)
 			begin, end := partial[:brk], partial[brk:]
@@ -113,7 +101,7 @@ func parseNode(r lineReader, ind int, initial Node) (node Node) {
 			case typScalar:
 				types = append(types, typScalar)
 				pieces = append(pieces, string(end))
-				return
+				return nil
 			case typMapping:
 				types = append(types, typMapping)
 				pieces = append(pieces, strings.TrimSpace(string(begin)))
@@ -123,7 +111,10 @@ func parseNode(r lineReader, ind int, initial Node) (node Node) {
 					text := ""
 
 					for {
-						l := r.Next(1)
+						l, err := r.Next(1)
+						if err != nil {
+							return err
+						}
 						if l == nil {
 							break
 						}
@@ -138,17 +129,23 @@ func parseNode(r lineReader, ind int, initial Node) (node Node) {
 
 					types = append(types, typScalar)
 					pieces = append(pieces, string(text))
-					return
+					return nil
 				}
 				inlineValue(end)
 			case typSequence:
 				types = append(types, typSequence)
 				pieces = append(pieces, "-")
 				inlineValue(end)
+			default:
+				return fmt.Errorf("unexpected inline value type %v: %v", vtyp, typNames[vtyp])
 			}
+			return nil
 		}
 
-		inlineValue(line.line)
+		err = inlineValue(line.line)
+		if err != nil {
+			return nil, err
+		}
 		var prev Node
 
 		// Nest inlines
@@ -160,13 +157,13 @@ func parseNode(r lineReader, ind int, initial Node) (node Node) {
 			if last == 0 {
 				current = node
 			}
-			//child := parseNode(r, line.indent+1, typUnknown) // TODO allow scalar only
+			// child := parseNode(r, line.indent+1, typUnknown) // TODO allow scalar only
 
 			// Add to current node
 			switch typ {
 			case typScalar: // last will be == nil
 				if _, ok := current.(Scalar); current != nil && !ok {
-					panic("cannot append scalar to non-scalar node")
+					return nil, fmt.Errorf("cannot append scalar to non-scalar node")
 				}
 				if current != nil {
 					current = Scalar(piece) + " " + current.(Scalar)
@@ -192,7 +189,10 @@ func parseNode(r lineReader, ind int, initial Node) (node Node) {
 					break
 				}
 
-				child = parseNode(r, line.indent+1, prev)
+				child, err = parseNode(r, line.indent+1, prev)
+				if err != nil {
+					return nil, err
+				}
 				mapNode[piece] = child
 				current = mapNode
 
@@ -215,10 +215,14 @@ func parseNode(r lineReader, ind int, initial Node) (node Node) {
 					break
 				}
 
-				child = parseNode(r, line.indent+1, prev)
+				child, err = parseNode(r, line.indent+1, prev)
+				if err != nil {
+					return nil, err
+				}
 				listNode = append(listNode, child)
 				current = listNode
-
+			default:
+				return nil, fmt.Errorf("unexpected type %v: %v", typ, typNames[typ])
 			}
 
 			if last < 0 {
@@ -306,7 +310,7 @@ type lineBuffer struct {
 	pending   *indentedLine
 }
 
-func (lb *lineBuffer) Next(min int) (next *indentedLine) {
+func (lb *lineBuffer) Next(min int) (*indentedLine, error) {
 	if lb.pending == nil {
 		var (
 			read []byte
@@ -321,9 +325,9 @@ func (lb *lineBuffer) Next(min int) (next *indentedLine) {
 			read, more, err = lb.ReadLine()
 			if err != nil {
 				if err == io.EOF {
-					return nil
+					return nil, nil
 				}
-				panic(err)
+				return nil, err
 			}
 			l.line = append(l.line, read...)
 		}
@@ -347,12 +351,12 @@ func (lb *lineBuffer) Next(min int) (next *indentedLine) {
 
 		lb.pending = l
 	}
-	next = lb.pending
+	next := lb.pending
 	if next.indent < min {
-		return nil
+		return nil, nil // note: should be error?
 	}
 	lb.pending = nil
-	return
+	return next, nil
 }
 
 type lineSlice []*indentedLine
