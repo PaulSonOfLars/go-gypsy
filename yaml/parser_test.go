@@ -175,6 +175,7 @@ func TestParse(t *testing.T) {
 		node, err := Parse(buf)
 		if err != nil {
 			t.Errorf("parse: %s", err)
+			continue
 		}
 		if got, want := Render(node), test.Output; got != want {
 			t.Errorf("---%d---", idx)

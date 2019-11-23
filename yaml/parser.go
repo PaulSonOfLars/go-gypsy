@@ -177,7 +177,7 @@ func parseNode(r lineReader, ind int, initial Node) (Node, error) {
 
 				// Get the current map, if there is one
 				if mapNode, ok = current.(Map); current != nil && !ok {
-					_ = current.(Map) // panic
+					return nil, fmt.Errorf("expected a map")
 				} else if current == nil {
 					mapNode = make(Map)
 				}
@@ -203,7 +203,7 @@ func parseNode(r lineReader, ind int, initial Node) (Node, error) {
 
 				// Get the current list, if there is one
 				if listNode, ok = current.(List); current != nil && !ok {
-					_ = current.(List) // panic
+					return nil, fmt.Errorf("expected a list")
 				} else if current == nil {
 					listNode = make(List, 0)
 				}
