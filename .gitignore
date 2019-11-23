@@ -1,3 +1,7 @@
+# User files
+.idea
+
+# Common files
 *.out
 .DS_Store
 *.[568ao]
